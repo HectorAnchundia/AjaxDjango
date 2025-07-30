@@ -1,0 +1,272 @@
+{% extends 'base.html' %}
+
+{% block title %}Comparación de Velocidad de Gestores de BD{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-12">
+        <h1 class="text-center mb-4">Comparación de Velocidad de Gestores de BD</h1>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header bg-primary text-white">
+                <h5 class="card-title mb-0">Formulario de Producto</h5>
+            </div>
+            <div class="card-body">
+                <form id="productForm">
+                    {% csrf_token %}
+                    <div class="mb-3">
+                        <label for="id_codigo" class="form-label">Código:</label>
+                        {{ form.codigo }}
+                    </div>
+                    <div class="mb-3">
+                        <label for="id_nombre" class="form-label">Nombre:</label>
+                        {{ form.nombre }}
+                    </div>
+                    <div class="mb-3">
+                        <label for="id_precio" class="form-label">Precio:</label>
+                        {{ form.precio }}
+                    </div>
+                    <div class="mb-3">
+                        <label for="id_cantidad" class="form-label">Cantidad:</label>
+                        {{ form.cantidad }}
+                    </div>
+                    <div class="mb-3">
+                        <label for="id_fecha" class="form-label">Fecha:</label>
+                        {{ form.fecha }}
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header bg-success text-white">
+                <h5 class="card-title mb-0">Gestores de Base de Datos</h5>
+            </div>
+            <div class="card-body">
+                <div class="list-group" id="dbEngines">
+                    <button type="button" class="list-group-item list-group-item-action" data-method="mysql">MySQL</button>
+                    <button type="button" class="list-group-item list-group-item-action" data-method="postgres">PostgreSQL</button>
+                    <button type="button" class="list-group-item list-group-item-action" data-method="oracle">Oracle</button>
+                    <button type="button" class="list-group-item list-group-item-action" data-method="sqlserver">SQL Server</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="card mt-3">
+            <div class="card-header bg-danger text-white">
+                <h5 class="card-title mb-0">Acciones</h5>
+            </div>
+            <div class="card-body">
+                <button id="btnInsert" class="btn btn-primary" disabled>Insertar Datos</button>
+                <button id="btnDelete" class="btn btn-danger" disabled>Eliminar Datos</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-4">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-header bg-info text-white">
+                <h5 class="card-title mb-0">Resultados</h5>
+            </div>
+            <div class="card-body">
+                <div id="results" class="alert alert-light">
+                    <p>Seleccione un gestor de base de datos para comenzar.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    $(document).ready(function() {
+        let selectedMethod = null;
+
+        // Seleccionar gestor de base de datos
+        $("#dbEngines button").click(function() {
+            $("#dbEngines button").removeClass("active");
+            $(this).addClass("active");
+            selectedMethod = $(this).data("method");
+            
+            // Probar conexión
+            testConnection(selectedMethod);
+        });
+
+        // Probar conexión con la base de datos
+        function testConnection(method) {
+            $("#results").html("<p>Probando conexión con " + method + "...</p>");
+            
+            $.ajax({
+                url: "{% url 'test_connection' %}",
+                type: "POST",
+                data: JSON.stringify({ method: method }),
+                contentType: "application/json",
+                success: function(response) {
+                    if (response.status === 1) {
+                        $("#results").html("<p class='text-success'>Conexión exitosa con " + method + ".</p>");
+                        $("#btnInsert, #btnDelete").prop("disabled", false);
+                    } else {
+                        $("#results").html("<p class='text-danger'>Error de conexión con " + method + ": " + response.error + "</p>");
+                        $("#btnInsert, #btnDelete").prop("disabled", true);
+                    }
+                },
+                error: function(xhr, status, error) {
+                    $("#results").html("<p class='text-danger'>Error de conexión: " + error + "</p>");
+                    $("#btnInsert, #btnDelete").prop("disabled", true);
+                }
+            });
+        }
+
+        // Insertar datos
+        $("#btnInsert").click(function() {
+            if (!selectedMethod) {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Error',
+                    text: 'Seleccione un gestor de base de datos primero'
+                });
+                return;
+            }
+
+            // Validar formulario
+            let isValid = true;
+            $("#productForm input").each(function() {
+                if ($(this).val() === "") {
+                    isValid = false;
+                    return false;
+                }
+            });
+
+            if (!isValid) {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Error',
+                    text: 'Complete todos los campos del formulario'
+                });
+                return;
+            }
+
+            // Mostrar mensaje de carga
+            Swal.fire({
+                title: 'Insertando datos...',
+                html: 'Este proceso tomará 60 segundos',
+                allowOutsideClick: false,
+                didOpen: () => {
+                    Swal.showLoading();
+                }
+            });
+
+            // Enviar datos
+            $.ajax({
+                url: "{% url 'insert_data' %}?method=" + selectedMethod,
+                type: "POST",
+                data: $("#productForm").serialize(),
+                success: function(response) {
+                    Swal.close();
+                    if (response.status === 1) {
+                        Swal.fire({
+                            icon: 'success',
+                            title: 'Éxito',
+                            text: response.message
+                        });
+                        $("#results").html("<p class='text-success'>" + response.message + "</p>");
+                    } else {
+                        Swal.fire({
+                            icon: 'error',
+                            title: 'Error',
+                            text: 'Error al insertar datos: ' + response.error
+                        });
+                        $("#results").html("<p class='text-danger'>Error al insertar datos: " + response.error + "</p>");
+                    }
+                },
+                error: function(xhr, status, error) {
+                    Swal.close();
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Error',
+                        text: 'Error al insertar datos: ' + error
+                    });
+                    $("#results").html("<p class='text-danger'>Error al insertar datos: " + error + "</p>");
+                }
+            });
+        });
+
+        // Eliminar datos
+        $("#btnDelete").click(function() {
+            if (!selectedMethod) {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Error',
+                    text: 'Seleccione un gestor de base de datos primero'
+                });
+                return;
+            }
+
+            // Confirmar eliminación
+            Swal.fire({
+                title: '¿Está seguro?',
+                text: "Se eliminarán todos los datos de la tabla PRODUCTO2",
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#3085d6',
+                cancelButtonColor: '#d33',
+                confirmButtonText: 'Sí, eliminar',
+                cancelButtonText: 'Cancelar'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    // Mostrar mensaje de carga
+                    Swal.fire({
+                        title: 'Eliminando datos...',
+                        allowOutsideClick: false,
+                        didOpen: () => {
+                            Swal.showLoading();
+                        }
+                    });
+
+                    // Enviar solicitud de eliminación
+                    $.ajax({
+                        url: "{% url 'delete_data' %}?method=" + selectedMethod,
+                        type: "POST",
+                        success: function(response) {
+                            Swal.close();
+                            if (response.status === 1) {
+                                Swal.fire({
+                                    icon: 'success',
+                                    title: 'Éxito',
+                                    text: 'Datos eliminados correctamente'
+                                });
+                                $("#results").html("<p class='text-success'>Datos eliminados correctamente</p>");
+                            } else {
+                                Swal.fire({
+                                    icon: 'error',
+                                    title: 'Error',
+                                    text: 'Error al eliminar datos: ' + response.error
+                                });
+                                $("#results").html("<p class='text-danger'>Error al eliminar datos: " + response.error + "</p>");
+                            }
+                        },
+                        error: function(xhr, status, error) {
+                            Swal.close();
+                            Swal.fire({
+                                icon: 'error',
+                                title: 'Error',
+                                text: 'Error al eliminar datos: ' + error
+                            });
+                            $("#results").html("<p class='text-danger'>Error al eliminar datos: " + error + "</p>");
+                        }
+                    });
+                }
+            });
+        });
+    });
+</script>
+{% endblock %}
