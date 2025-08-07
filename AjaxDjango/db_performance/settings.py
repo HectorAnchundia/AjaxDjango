@@ -90,7 +90,7 @@ DATABASES = {
         'PORT': '1521',
     },
     'sqlserver': {
-        'ENGINE': 'sql_server.pyodbc',
+        'ENGINE': 'mssql',
         'NAME': 'BDPRODUCTO',
         'USER': 'bd',
         'PASSWORD': '1234Aa',

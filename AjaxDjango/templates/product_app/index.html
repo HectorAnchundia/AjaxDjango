@@ -49,11 +49,34 @@
                 <h5 class="card-title mb-0">Gestores de Base de Datos</h5>
             </div>
             <div class="card-body">
-                <div class="list-group" id="dbEngines">
-                    <button type="button" class="list-group-item list-group-item-action" data-method="mysql">MySQL</button>
-                    <button type="button" class="list-group-item list-group-item-action" data-method="postgres">PostgreSQL</button>
-                    <button type="button" class="list-group-item list-group-item-action" data-method="oracle">Oracle</button>
-                    <button type="button" class="list-group-item list-group-item-action" data-method="sqlserver">SQL Server</button>
+                <div class="form-check mb-2">
+                    <input class="form-check-input" type="checkbox" id="selectAllDbs">
+                    <label class="form-check-label" for="selectAllDbs">
+                        <strong>Seleccionar todos</strong>
+                    </label>
+                </div>
+                <hr>
+                <div id="dbEngines">
+                    <div class="form-check">
+                        <input class="form-check-input db-checkbox" type="checkbox" id="mysql" data-method="mysql">
+                        <label class="form-check-label" for="mysql">MySQL</label>
+                        <span class="connection-status ms-2"></span>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input db-checkbox" type="checkbox" id="postgres" data-method="postgres">
+                        <label class="form-check-label" for="postgres">PostgreSQL</label>
+                        <span class="connection-status ms-2"></span>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input db-checkbox" type="checkbox" id="oracle" data-method="oracle">
+                        <label class="form-check-label" for="oracle">Oracle</label>
+                        <span class="connection-status ms-2"></span>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input db-checkbox" type="checkbox" id="sqlserver" data-method="sqlserver">
+                        <label class="form-check-label" for="sqlserver">SQL Server</label>
+                        <span class="connection-status ms-2"></span>
+                    </div>
                 </div>
             </div>
         </div>
@@ -63,6 +86,7 @@
                 <h5 class="card-title mb-0">Acciones</h5>
             </div>
             <div class="card-body">
+                <button id="btnTestConnections" class="btn btn-info">Probar Conexiones</button>
                 <button id="btnInsert" class="btn btn-primary" disabled>Insertar Datos</button>
                 <button id="btnDelete" class="btn btn-danger" disabled>Eliminar Datos</button>
             </div>
@@ -72,15 +96,8 @@
 
 <div class="row mt-4">
     <div class="col-md-12">
-        <div class="card">
-            <div class="card-header bg-info text-white">
-                <h5 class="card-title mb-0">Resultados</h5>
-            </div>
-            <div class="card-body">
-                <div id="results" class="alert alert-light">
-                    <p>Seleccione un gestor de base de datos para comenzar.</p>
-                </div>
-            </div>
+        <div id="resultsContainer">
+            <!-- Aquí se mostrarán los resultados de cada gestor -->
         </div>
     </div>
 </div>
@@ -89,21 +106,96 @@
 {% block extra_js %}
 <script>
     $(document).ready(function() {
-        let selectedMethod = null;
+        // Variable para controlar si hay una operación en curso
+        let isOperationInProgress = false;
 
-        // Seleccionar gestor de base de datos
-        $("#dbEngines button").click(function() {
-            $("#dbEngines button").removeClass("active");
-            $(this).addClass("active");
-            selectedMethod = $(this).data("method");
+        // Función para actualizar el estado de los botones
+        function updateButtonsState() {
+            const hasSelectedDbs = $(".db-checkbox:checked").length > 0;
+            const canPerformActions = hasSelectedDbs && !isOperationInProgress;
             
-            // Probar conexión
-            testConnection(selectedMethod);
+            $("#btnTestConnections").prop("disabled", isOperationInProgress);
+            $("#btnInsert").prop("disabled", !canPerformActions);
+            $("#btnDelete").prop("disabled", !canPerformActions);
+            
+            // También deshabilitar las casillas de verificación durante operaciones
+            $(".db-checkbox, #selectAllDbs").prop("disabled", isOperationInProgress);
+        }
+
+        // Manejar selección de "Seleccionar todos"
+        $("#selectAllDbs").change(function() {
+            $(".db-checkbox").prop("checked", $(this).is(":checked"));
+            updateButtonsState();
         });
 
-        // Probar conexión con la base de datos
-        function testConnection(method) {
-            $("#results").html("<p>Probando conexión con " + method + "...</p>");
+        // Actualizar "Seleccionar todos" cuando se cambian las casillas individuales
+        $(".db-checkbox").change(function() {
+            $("#selectAllDbs").prop("checked", $(".db-checkbox:checked").length === $(".db-checkbox").length);
+            updateButtonsState();
+        });
+
+        // Probar conexiones con las bases de datos seleccionadas
+        $("#btnTestConnections").click(function() {
+            const selectedDbs = getSelectedDatabases();
+            
+            if (selectedDbs.length === 0) {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Error',
+                    text: 'Seleccione al menos un gestor de base de datos'
+                });
+                return;
+            }
+
+            // Establecer que hay una operación en curso
+            isOperationInProgress = true;
+            updateButtonsState();
+
+            $("#resultsContainer").html(`
+                <div class="card">
+                    <div class="card-header bg-info text-white">
+                        <h5 class="card-title mb-0">Estado de Conexiones</h5>
+                    </div>
+                    <div class="card-body" id="connectionResults">
+                        <p>Probando conexiones...</p>
+                    </div>
+                </div>
+            `);
+            
+            let successCount = 0;
+            let connectionResults = "";
+            
+            // Probar cada conexión seleccionada
+            const totalDbs = selectedDbs.length;
+            let checkedDbs = 0;
+            
+            selectedDbs.forEach(function(dbMethod) {
+                testConnection(dbMethod, function(success, message) {
+                    checkedDbs++;
+                    
+                    if (success) {
+                        successCount++;
+                        connectionResults += `<div class="alert alert-success">${getDbName(dbMethod)}: Conectado correctamente</div>`;
+                    } else {
+                        connectionResults += `<div class="alert alert-danger">${getDbName(dbMethod)}: Error de conexión - ${message}</div>`;
+                    }
+                    
+                    // Actualizar resultados
+                    $("#connectionResults").html(connectionResults);
+                    
+                    // Si todas las conexiones se han probado, finalizar la operación
+                    if (checkedDbs === totalDbs) {
+                        isOperationInProgress = false;
+                        updateButtonsState();
+                    }
+                });
+            });
+        });
+
+        // Función para probar conexión con un gestor específico
+        function testConnection(method, callback) {
+            const statusElement = $(`#${method}`).closest('.form-check').find('.connection-status');
+            statusElement.html('<small class="text-muted">(probando...)</small>');
             
             $.ajax({
                 url: "{% url 'test_connection' %}",
@@ -112,27 +204,38 @@
                 contentType: "application/json",
                 success: function(response) {
                     if (response.status === 1) {
-                        $("#results").html("<p class='text-success'>Conexión exitosa con " + method + ".</p>");
-                        $("#btnInsert, #btnDelete").prop("disabled", false);
+                        statusElement.html('<small class="text-success">(conectado)</small>');
+                        callback(true, "");
                     } else {
-                        $("#results").html("<p class='text-danger'>Error de conexión con " + method + ": " + response.error + "</p>");
-                        $("#btnInsert, #btnDelete").prop("disabled", true);
+                        statusElement.html('<small class="text-danger">(error)</small>');
+                        callback(false, response.error || "Error desconocido");
                     }
                 },
                 error: function(xhr, status, error) {
-                    $("#results").html("<p class='text-danger'>Error de conexión: " + error + "</p>");
-                    $("#btnInsert, #btnDelete").prop("disabled", true);
+                    statusElement.html('<small class="text-danger">(error)</small>');
+                    callback(false, error || "Error de conexión");
                 }
             });
         }
 
-        // Insertar datos
+        // Obtener gestores de bases de datos seleccionados
+        function getSelectedDatabases() {
+            const selected = [];
+            $(".db-checkbox:checked").each(function() {
+                selected.push($(this).data("method"));
+            });
+            return selected;
+        }
+
+        // Insertar datos en todas las bases de datos seleccionadas
         $("#btnInsert").click(function() {
-            if (!selectedMethod) {
+            const selectedDbs = getSelectedDatabases();
+            
+            if (selectedDbs.length === 0) {
                 Swal.fire({
                     icon: 'error',
                     title: 'Error',
-                    text: 'Seleccione un gestor de base de datos primero'
+                    text: 'Seleccione al menos un gestor de base de datos'
                 });
                 return;
             }
@@ -155,58 +258,104 @@
                 return;
             }
 
-            // Mostrar mensaje de carga
-            Swal.fire({
-                title: 'Insertando datos...',
-                html: 'Este proceso tomará 60 segundos',
-                allowOutsideClick: false,
-                didOpen: () => {
-                    Swal.showLoading();
-                }
-            });
+            // Establecer que hay una operación en curso
+            isOperationInProgress = true;
+            updateButtonsState();
 
-            // Enviar datos
-            $.ajax({
-                url: "{% url 'insert_data' %}?method=" + selectedMethod,
-                type: "POST",
-                data: $("#productForm").serialize(),
-                success: function(response) {
-                    Swal.close();
-                    if (response.status === 1) {
-                        Swal.fire({
-                            icon: 'success',
-                            title: 'Éxito',
-                            text: response.message
-                        });
-                        $("#results").html("<p class='text-success'>" + response.message + "</p>");
-                    } else {
-                        Swal.fire({
-                            icon: 'error',
-                            title: 'Error',
-                            text: 'Error al insertar datos: ' + response.error
-                        });
-                        $("#results").html("<p class='text-danger'>Error al insertar datos: " + response.error + "</p>");
+            // Preparar contenedor de resultados
+            $("#resultsContainer").html(`
+                <div class="card">
+                    <div class="card-header bg-primary text-white">
+                        <h5 class="card-title mb-0">Resultados de Inserción</h5>
+                    </div>
+                    <div class="card-body" id="insertResults">
+                        <div class="row">
+                            ${selectedDbs.map(db => `
+                                <div class="col-md-6 mb-3">
+                                    <div class="card">
+                                        <div class="card-header bg-secondary text-white">
+                                            <h5 class="card-title mb-0">${getDbName(db)}</h5>
+                                        </div>
+                                        <div class="card-body" id="insert-result-${db}">
+                                            <div class="d-flex justify-content-center">
+                                                <div class="spinner-border text-primary" role="status">
+                                                    <span class="visually-hidden">Cargando...</span>
+                                                </div>
+                                            </div>
+                                            <p class="text-center mt-2">Insertando datos...</p>
+                                            <p class="text-center text-muted">Este proceso tomará 60 segundos</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                </div>
+            `);
+
+            // Contador para saber cuándo se han completado todas las solicitudes
+            let completedRequests = 0;
+            
+            // Enviar solicitudes a todos los gestores seleccionados simultáneamente
+            selectedDbs.forEach(function(db) {
+                insertData(db, function() {
+                    completedRequests++;
+                    // Si todas las solicitudes se han completado, finalizar la operación
+                    if (completedRequests === selectedDbs.length) {
+                        isOperationInProgress = false;
+                        updateButtonsState();
                     }
-                },
-                error: function(xhr, status, error) {
-                    Swal.close();
-                    Swal.fire({
-                        icon: 'error',
-                        title: 'Error',
-                        text: 'Error al insertar datos: ' + error
-                    });
-                    $("#results").html("<p class='text-danger'>Error al insertar datos: " + error + "</p>");
-                }
+                });
             });
         });
 
-        // Eliminar datos
+        // Función para insertar datos en un gestor específico
+        function insertData(method, callback) {
+            const resultElement = $(`#insert-result-${method}`);
+            
+            $.ajax({
+                url: "{% url 'insert_data' %}?method=" + method,
+                type: "POST",
+                data: $("#productForm").serialize(),
+                success: function(response) {
+                    if (response.status === 1) {
+                        resultElement.html(`
+                            <div class="alert alert-success mb-0">
+                                <h4 class="alert-heading">¡Completado!</h4>
+                                <p class="mb-0">${response.message}</p>
+                            </div>
+                        `);
+                    } else {
+                        resultElement.html(`
+                            <div class="alert alert-danger mb-0">
+                                <h4 class="alert-heading">Error</h4>
+                                <p class="mb-0">${response.error || "Error desconocido"}</p>
+                            </div>
+                        `);
+                    }
+                    if (callback) callback();
+                },
+                error: function(xhr, status, error) {
+                    resultElement.html(`
+                        <div class="alert alert-danger mb-0">
+                            <h4 class="alert-heading">Error</h4>
+                            <p class="mb-0">${error || "Error desconocido"}</p>
+                        </div>
+                    `);
+                    if (callback) callback();
+                }
+            });
+        }
+
+        // Eliminar datos de todas las bases de datos seleccionadas
         $("#btnDelete").click(function() {
-            if (!selectedMethod) {
+            const selectedDbs = getSelectedDatabases();
+            
+            if (selectedDbs.length === 0) {
                 Swal.fire({
                     icon: 'error',
                     title: 'Error',
-                    text: 'Seleccione un gestor de base de datos primero'
+                    text: 'Seleccione al menos un gestor de base de datos'
                 });
                 return;
             }
@@ -214,7 +363,7 @@
             // Confirmar eliminación
             Swal.fire({
                 title: '¿Está seguro?',
-                text: "Se eliminarán todos los datos de la tabla PRODUCTO2",
+                text: "Se eliminarán todos los datos de la tabla PRODUCTO2 en los gestores seleccionados",
                 icon: 'warning',
                 showCancelButton: true,
                 confirmButtonColor: '#3085d6',
@@ -223,50 +372,105 @@
                 cancelButtonText: 'Cancelar'
             }).then((result) => {
                 if (result.isConfirmed) {
-                    // Mostrar mensaje de carga
-                    Swal.fire({
-                        title: 'Eliminando datos...',
-                        allowOutsideClick: false,
-                        didOpen: () => {
-                            Swal.showLoading();
-                        }
-                    });
+                    // Establecer que hay una operación en curso
+                    isOperationInProgress = true;
+                    updateButtonsState();
+                    
+                    // Preparar contenedor de resultados
+                    $("#resultsContainer").html(`
+                        <div class="card">
+                            <div class="card-header bg-danger text-white">
+                                <h5 class="card-title mb-0">Resultados de Eliminación</h5>
+                            </div>
+                            <div class="card-body" id="deleteResults">
+                                <div class="row">
+                                    ${selectedDbs.map(db => `
+                                        <div class="col-md-6 mb-3">
+                                            <div class="card">
+                                                <div class="card-header bg-secondary text-white">
+                                                    <h5 class="card-title mb-0">${getDbName(db)}</h5>
+                                                </div>
+                                                <div class="card-body" id="delete-result-${db}">
+                                                    <div class="d-flex justify-content-center">
+                                                        <div class="spinner-border text-danger" role="status">
+                                                            <span class="visually-hidden">Cargando...</span>
+                                                        </div>
+                                                    </div>
+                                                    <p class="text-center mt-2">Eliminando datos...</p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    `).join('')}
+                                </div>
+                            </div>
+                        </div>
+                    `);
 
-                    // Enviar solicitud de eliminación
-                    $.ajax({
-                        url: "{% url 'delete_data' %}?method=" + selectedMethod,
-                        type: "POST",
-                        success: function(response) {
-                            Swal.close();
-                            if (response.status === 1) {
-                                Swal.fire({
-                                    icon: 'success',
-                                    title: 'Éxito',
-                                    text: 'Datos eliminados correctamente'
-                                });
-                                $("#results").html("<p class='text-success'>Datos eliminados correctamente</p>");
-                            } else {
-                                Swal.fire({
-                                    icon: 'error',
-                                    title: 'Error',
-                                    text: 'Error al eliminar datos: ' + response.error
-                                });
-                                $("#results").html("<p class='text-danger'>Error al eliminar datos: " + response.error + "</p>");
+                    // Contador para saber cuándo se han completado todas las solicitudes
+                    let completedRequests = 0;
+                    
+                    // Enviar solicitudes a todos los gestores seleccionados simultáneamente
+                    selectedDbs.forEach(function(db) {
+                        deleteData(db, function() {
+                            completedRequests++;
+                            // Si todas las solicitudes se han completado, finalizar la operación
+                            if (completedRequests === selectedDbs.length) {
+                                isOperationInProgress = false;
+                                updateButtonsState();
                             }
-                        },
-                        error: function(xhr, status, error) {
-                            Swal.close();
-                            Swal.fire({
-                                icon: 'error',
-                                title: 'Error',
-                                text: 'Error al eliminar datos: ' + error
-                            });
-                            $("#results").html("<p class='text-danger'>Error al eliminar datos: " + error + "</p>");
-                        }
+                        });
                     });
                 }
             });
         });
+
+        // Función para eliminar datos de un gestor específico
+        function deleteData(method, callback) {
+            const resultElement = $(`#delete-result-${method}`);
+            
+            $.ajax({
+                url: "{% url 'delete_data' %}?method=" + method,
+                type: "POST",
+                success: function(response) {
+                    if (response.status === 1) {
+                        resultElement.html(`
+                            <div class="alert alert-success mb-0">
+                                <h4 class="alert-heading">¡Completado!</h4>
+                                <p class="mb-0">Datos eliminados correctamente</p>
+                            </div>
+                        `);
+                    } else {
+                        resultElement.html(`
+                            <div class="alert alert-danger mb-0">
+                                <h4 class="alert-heading">Error</h4>
+                                <p class="mb-0">${response.error || "Error desconocido"}</p>
+                            </div>
+                        `);
+                    }
+                    if (callback) callback();
+                },
+                error: function(xhr, status, error) {
+                    resultElement.html(`
+                        <div class="alert alert-danger mb-0">
+                            <h4 class="alert-heading">Error</h4>
+                            <p class="mb-0">${error || "Error desconocido"}</p>
+                        </div>
+                    `);
+                    if (callback) callback();
+                }
+            });
+        }
+
+        // Función para obtener nombre amigable del gestor de base de datos
+        function getDbName(method) {
+            const names = {
+                'mysql': 'MySQL',
+                'postgres': 'PostgreSQL',
+                'oracle': 'Oracle',
+                'sqlserver': 'SQL Server'
+            };
+            return names[method] || method;
+        }
     });
 </script>
 {% endblock %}
